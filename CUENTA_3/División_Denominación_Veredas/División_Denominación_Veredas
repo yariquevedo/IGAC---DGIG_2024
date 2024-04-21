@@ -12,11 +12,25 @@ ruta_salida = arcpy.GetParameterAsText(0)
 municipios = arcpy.GetParameterAsText(1)
 veredas = arcpy.GetParameterAsText(2)
 
-GDB_temp = arcpy.management.CreateFileGDB(os.path.join(ruta_salida), "GDB_temp.gdb")
+#Sobrescribir datos de salida
+arcpy.env.overwriteOutput = True
 
-def division(municipios, veredas, ruta_salida):
-    lineas = arcpy.management.PolygonToLine(municipios, (GDB_temp,"lineas_munpio"))
-    intersect = arcpy.analysis.Intersect([lineas, veredas], out_feature_class, {join_attributes}, {cluster_tolerance}, {output_type})
+# Crear geodatabase temporal
+GDB_temp_result = arcpy.management.CreateFileGDB(ruta_salida, "GDB_temp.gdb")
+GDB_temp = GDB_temp_result.getOutput(0)  # Obtener el nombre completo de la geodatabase temporal
+
+def division(municipios, veredas):
+    #Cambiar la geometría de los municipios de tipo poligono a línea
+    lineas = arcpy.management.PolygonToLine(municipios, os.path.join(GDB_temp, "lineas_municipio"), "IGNORE_NEIGHBORS")
+    intersect = arcpy.analysis.Intersect(veredas, lineas, "ALL","","INPUT")
+    arcpy.AddMessage ("Dividiendo veredas")
+    copy = arcpy.management.Copy(intersect, os.path.join(GDB_temp, "veredas_divididas"))
+    #clip = arcpy.analysis.Clip(municipios, veredas, os.path.join(ruta_salida, "veredas_divididas"))
+    return copy
     
-    
-division(municipios, veredas, ruta_salida)
+division(municipios, veredas)
+
+# area_munpi = 0
+# with arcpy.da.SearchCursor(temp, ["SHAPE@AREA"]) as cursor:
+#     for row in cursor:
+#             area_munpi = row[0] + area_munpi
