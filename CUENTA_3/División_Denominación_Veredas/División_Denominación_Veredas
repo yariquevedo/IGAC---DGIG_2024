@@ -1,0 +1,22 @@
+#SEMILLERO DE INVESTIGACIÓN Y DESARROLLO 
+#FECHA DE REALIZACIÓN: 21/04/2024
+#DESCRIPCIÓN: SCRIPT QUE PERMITE DIVIDIR LAS VEREDAS EN COMÚN ENTRE DOS MUNICIPIOS Y AGREGAR A CADA POLÍGOO EL NOMBRE
+#YARITZA QUEVEDO
+#----------------------------------------------------------------------------
+import arcpy, os
+
+
+#municipios = r"\\172.26.0.20\Elite_Sub_Geografia_Cartografia\Coberturas\GDB_FLET_Agosto_2023.gdb\Limites_Entidades_Territoriales\Munpio"
+
+ruta_salida = arcpy.GetParameterAsText(0)
+municipios = arcpy.GetParameterAsText(1)
+veredas = arcpy.GetParameterAsText(2)
+
+GDB_temp = arcpy.management.CreateFileGDB(os.path.join(ruta_salida), "GDB_temp.gdb")
+
+def division(municipios, veredas, ruta_salida):
+    lineas = arcpy.management.PolygonToLine(municipios, (GDB_temp,"lineas_munpio"))
+    intersect = arcpy.analysis.Intersect([lineas, veredas], out_feature_class, {join_attributes}, {cluster_tolerance}, {output_type})
+    
+    
+division(municipios, veredas, ruta_salida)
