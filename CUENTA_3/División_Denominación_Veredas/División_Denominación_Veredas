@@ -12,7 +12,7 @@ ruta_salida = arcpy.GetParameterAsText(0)
 municipios = arcpy.GetParameterAsText(1)
 veredas = arcpy.GetParameterAsText(2)
 
-#Sobrescribir datos de salida
+# Sobrescribir datos de salida si es necesario
 arcpy.env.overwriteOutput = True
 
 # Crear geodatabase temporal
@@ -20,17 +20,27 @@ GDB_temp_result = arcpy.management.CreateFileGDB(ruta_salida, "GDB_temp.gdb")
 GDB_temp = GDB_temp_result.getOutput(0)  # Obtener el nombre completo de la geodatabase temporal
 
 def division(municipios, veredas):
-    #Cambiar la geometría de los municipios de tipo poligono a línea
-    lineas = arcpy.management.PolygonToLine(municipios, os.path.join(GDB_temp, "lineas_municipio"), "IGNORE_NEIGHBORS")
-    intersect = arcpy.analysis.Intersect(veredas, lineas, "ALL","","INPUT")
-    arcpy.AddMessage ("Dividiendo veredas")
-    copy = arcpy.management.Copy(intersect, os.path.join(GDB_temp, "veredas_divididas"))
-    #clip = arcpy.analysis.Clip(municipios, veredas, os.path.join(ruta_salida, "veredas_divididas"))
-    return copy
-    
-division(municipios, veredas)
+    # Intersectar el límite del municipios con las veredas
+    select = arcpy.management.SelectLayerByLocation(veredas, "CROSSED_BY_THE_OUTLINE_OF", municipios)
+    arcpy.AddMessage("Seleccionando veredas")
 
-# area_munpi = 0
-# with arcpy.da.SearchCursor(temp, ["SHAPE@AREA"]) as cursor:
-#     for row in cursor:
-#             area_munpi = row[0] + area_munpi
+    #Copiar las veredas que se intersectan con los límites del municipio
+    copia = arcpy.management.CopyFeatures(select, os.path.join(GDB_temp, "copia_veredas"))
+    
+    #Dividir las veredas de acuerdo a los límites municipales
+    dividir = arcpy.analysis.Intersect([municipios, copia], os.path.join(GDB_temp, "veredas_divididas"), "ALL", "", "INPUT")
+    return dividir
+
+veredas_divididas = division(municipios, veredas)
+
+
+campos = ["FID", "SHAPE@", "Nombre"]
+with arcpy.da.UpdateCursor(veredas_divididas, campos) as cursor:
+    for row in cursor:
+        vereda_id = row[0]
+        nombre_vereda = arcpy.management.SelectLayerByAttribute(veredas, "NEW_SELECTION", f"FID = {vereda_id}").getValue("Nombre")
+        row[2] = nombre_vereda
+        cursor.updateRow(row)
+
+# Guardar el resultado en la ruta de salida
+arcpy.CopyFeatures_management(veredas_divididas, os.path.join(ruta_salida, "veredas_divididas"))
