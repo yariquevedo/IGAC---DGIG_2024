@@ -1,0 +1,1362 @@
+import arcpy
+import os
+#Desarrollo Validacion Data Reviewer
+# Desarrollado por : Yaritza Quevedo - Michael Rojas
+#Modificado por Sergio Rafael Navarro
+#27/03/2024
+
+GDB_Entrada = arcpy.GetParameterAsText(0)
+Ruta_Salida = arcpy.GetParameterAsText(1)
+R1 = arcpy.GetParameterAsText(2) #LVia_ConstrR
+#R2 = arcpy.GetParameterAsText(3) #Via_DrenajL
+R3 = arcpy.GetParameterAsText(3) #Via_Bosque
+R4 = arcpy.GetParameterAsText(4) #DAguaR_CNivel
+R5 = arcpy.GetParameterAsText(5) #Bosque_ConstrR        
+R6 = arcpy.GetParameterAsText(6) #Cerca_DAguaR          
+R7 = arcpy.GetParameterAsText(7) #Muro_DAguaR           
+R8 = arcpy.GetParameterAsText(8) #LVia_DAguaR           
+R9 = arcpy.GetParameterAsText(9) #DrenajeL_CNivel
+R10 = arcpy.GetParameterAsText(10) #Via_Construccciones
+T1 = arcpy.GetParameterAsText(11) #Cnivel_Piscin
+#T2 = arcpy.GetParameterAsText(13) #Cerca_Constr_R
+T3 = arcpy.GetParameterAsText(12) #Bosque_DAgua_R
+#T4 = arcpy.GetParameterAsText(13) #Cerca_DAguaR     
+#T5 = arcpy.GetParameterAsText(14) #Muro_DAguaR     
+T6 = arcpy.GetParameterAsText(13) #Lvia_Muro
+T7 = arcpy.GetParameterAsText(14) #LVia_ZDura
+V1 = arcpy.GetParameterAsText(15) #LVia_DAguaR      
+V2 = arcpy.GetParameterAsText(16) #LVia_Cercas
+V3 = arcpy.GetParameterAsText(17) #ConstruccionR_ConstruccionP  #AGREGADO
+V4 = arcpy.GetParameterAsText(18) #Vias_Deposito
+V5 = arcpy.GetParameterAsText(19) #DepositoR_DrenajeL #AGREGADO
+V6 = arcpy.GetParameterAsText(20) #DepositoR_DrenajeR #AGREGADO
+V7 = arcpy.GetParameterAsText(21) #JagueyP_JagueyR   #AGREGADO
+V8 = arcpy.GetParameterAsText(22)#DepositoP_DepositoR #AGREGADO
+#V9 = arcpy.GetParameterAsText(24) # Muro Construcciones
+V10  = arcpy.GetParameterAsText(23) # Construccion_R Tapa de servicio Publico
+V11 = arcpy.GetParameterAsText(24) # Construccion_R Punto de distribución
+V12 = arcpy.GetParameterAsText(25) # Vias - Zonas Duras
+#V13 = arcpy.GetParameterAsText(28) #Validar Bosque - Bosque
+V14 = arcpy.GetParameterAsText(26) #Validar Bosque - Drenaje R
+#V15 = arcpy.GetParameterAsText(24) #Validar Cerca - Drenaje (Permanente) 
+V16 = arcpy.GetParameterAsText(27) #Validar Cicloruta vs Limite de vía
+#V17 = arcpy.GetParameterAsText(32) #Validar Construcción P -Construcción P
+#V18 = arcpy.GetParameterAsText(33) #Validar Construcción R -Construcción R
+V19 = arcpy.GetParameterAsText(28) # Validar Drenaje R - Curva de Nivel 
+V20 = arcpy.GetParameterAsText(29) # Validar Nombre Geográfico - Construcción P 1K, 10K, 25K (Intersect)
+V21 = arcpy.GetParameterAsText(30) # Validar Nombre Geográfico - Limite de Vía 
+V22 = arcpy.GetParameterAsText(31) # Validar Nombre Geográfico - Nombre Geográfico
+V23 = arcpy.GetParameterAsText(32) # Validar Punto de Distribucion vs Deposito de Agua R
+V24 = arcpy.GetParameterAsText(33) # Validar Vía (Tipo Primaria, secundaria y terciaria) - Cerca
+V25 = arcpy.GetParameterAsText(34) # Validar Vía (Tipo Primaria, secundaria y terciaria) - Drenaje (Permanente)
+V26 = arcpy.GetParameterAsText(35) # Validar Drenaje L - Drenaje R  #AGREGADO
+V27 = arcpy.GetParameterAsText(36) # Validar Tuberia Vs Construccion_R 
+
+arcpy.env.overwriteOutput = True
+
+def LVia_ConstrR(GDB_Entrada, GDB_Salida): #Limite via y construccion no se pueden cruzar
+    arcpy.env.workspace = GDB_Entrada
+    LVia = os.path.join(str(GDB_Entrada),'Transporte\LVia')
+    ConstrR = os.path.join(str(GDB_Entrada),'ViviendaCiudadTerritorio\Constr_R')
+    
+    ly_LVia = arcpy.management.MakeFeatureLayer(LVia, 'ly_LVia')
+    ly_ConstrR = arcpy.management.MakeFeatureLayer(ConstrR, 'ly_ConstrR')
+    
+    arcpy.management.SelectLayerByLocation(ly_LVia, 'CROSSED_BY_THE_OUTLINE_OF', ly_ConstrR, '', 'NEW_SELECTION', 'NOT_INVERT')
+    copia_select = arcpy.management.CopyFeatures(ly_LVia, os.path.join(str(GDB_Salida), 'LVia_ConstrR'))
+    
+    arcpy.management.AddField(copia_select, 'FC_Origen', 'TEXT')
+    fc_origen_nombre = os.path.basename(LVia)
+    arcpy.management.CalculateField(copia_select, 'FC_Origen', f"'{fc_origen_nombre}'", 'PYTHON')
+    
+    total= arcpy.management.GetCount(copia_select)
+    
+    if str(total) == '0':
+        arcpy.management.Delete(copia_select)
+    return total
+    
+    
+def Via_DrenajL(GDB_Entrada, Ruta_Salida, GDB_Salida): #Verificar donde se cruza y revisar si existe el elemento tipo puente
+    arcpy.env.workspace = GDB_Entrada
+    Feature_Class_Via = os.path.join(str(GDB_Entrada),'Transporte\Via')
+    Feature_Class_DrenajeL = os.path.join(str(GDB_Entrada), 'Hidrografia\Drenaj_L')
+    Feature_Class_Puente = os.path.join(str(GDB_Entrada), 'Transporte\Puente_L')
+    
+    
+    intersect = arcpy.analysis.Intersect([Feature_Class_Via, Feature_Class_DrenajeL],os.path.join(str(Ruta_Salida),'intersect_temp.shp'),'ALL','','POINT')
+    
+    ly_intersect = arcpy.management.MakeFeatureLayer(intersect, 'ly_intersect')                                                 
+    ly_puente = arcpy.management.MakeFeatureLayer(Feature_Class_Puente,'ly_puente')
+    
+    arcpy.management.SelectLayerByLocation(ly_intersect,'WITHIN_A_DISTANCE',ly_puente, '5 Meters', 'NEW_SELECTION','NOT_INVERT')
+    salida = arcpy.management.CopyFeatures(ly_intersect, os.path.join(str(GDB_Salida), 'Via_DrenajL'))
+    
+    arcpy.management.AddField(salida, 'FC_Origen', 'TEXT')
+    fc_origen_nombre = os.path.basename(Feature_Class_Via)
+    arcpy.management.CalculateField(salida, 'FC_Origen', f"'{fc_origen_nombre}'", 'PYTHON')
+    
+    total = arcpy.management.GetCount(salida)
+    
+    if str(total) == '0':
+        arcpy.Delete_management(salida)
+    arcpy.Delete_management(intersect)
+    return total
+
+def Via_Bosque(GDB_Entrada, GDB_Salida): #La vía primaria y bosque no se pueden cruzar
+    arcpy.env.workspace = GDB_Entrada
+    Feature_Class_Via = os.path.join(str(GDB_Entrada),'Transporte\Via')
+    Feature_Class_Bosque = os.path.join(str(GDB_Entrada),'CoberturaTierra\Bosque')
+    
+    via_primaria = arcpy.management.MakeFeatureLayer(Feature_Class_Via, 'via_primaria', where_clause='VTipo=1')
+    bosque = arcpy.management.MakeFeatureLayer(Feature_Class_Bosque, 'bosque')
+
+    salida = arcpy.analysis.Intersect([via_primaria, bosque], os.path.join(str(GDB_Salida),'Via_Bosque'),'ALL','','LINE')
+    
+    arcpy.management.AddField(salida, 'FC_Origen', 'TEXT')
+    fc_origen_nombre = os.path.basename(Feature_Class_Via)
+    arcpy.management.CalculateField(salida, 'FC_Origen', f"'{fc_origen_nombre}'", 'PYTHON')
+    
+    total = arcpy.management.GetCount(salida)
+    if str(total) == '0':
+        arcpy.management.Delete(salida)    
+    return total
+
+def DAguaR_CNivel(GDB_Entrada, GDB_Salida): #Las curvas de nivel no pueden cruzar sobre los depositos de agua, a excepción de pantanos
+    arcpy.env.workspace=GDB_Entrada
+    Feature_Class_Curvas_Nivel = os.path.join(str(GDB_Entrada),'Elevacion\CNivel')
+    DAguaR = os.path.join(str(GDB_Entrada),'Hidrografia\DAgua_R')
+    
+    ly_Cnivel = arcpy.management.MakeFeatureLayer(Feature_Class_Curvas_Nivel,'ly_Cnivel')
+    ly_DepAgua_Sel = arcpy.management.MakeFeatureLayer(DAguaR, 'ly_DepAgua_Sel', where_clause='DATipo <> 5')
+    
+    arcpy.management.SelectLayerByLocation(ly_Cnivel, 'CROSSED_BY_THE_OUTLINE_OF', ly_DepAgua_Sel, '', 'NEW_SELECTION', 'NOT_INVERT')
+    salida = arcpy.management.CopyFeatures(ly_Cnivel, os.path.join(str(GDB_Salida), 'DAguaR_CNivel'))
+    
+    arcpy.management.AddField(salida, 'FC_Origen', 'TEXT')
+    fc_origen_nombre = os.path.basename(Feature_Class_Curvas_Nivel)
+    arcpy.management.CalculateField(salida, 'FC_Origen', f"'{fc_origen_nombre}'", 'PYTHON')
+    
+    total= arcpy.management.GetCount(salida)
+
+    if str(total) == '0':
+        arcpy.management.Delete(salida)    
+    return total
+     
+def Bosque_ConstrR(GDB_Entrada, GDB_Salida): #Extrae la construcción si esta contenida completamente dentro de un bosque
+    arcpy.env.workspace=GDB_Entrada
+    Feature_Class_Bosque = os.path.join(str(GDB_Entrada),'CoberturaTierra\Bosque')
+    Feature_Class_Construccion = os.path.join(str(GDB_Entrada),'ViviendaCiudadTerritorio\Constr_R')
+    
+    ly_Bosque = arcpy.management.MakeFeatureLayer(Feature_Class_Bosque,'ly_bosque')
+    ly_Construccion = arcpy.management.MakeFeatureLayer(Feature_Class_Construccion, 'ly_construccion')
+    
+    arcpy.management.SelectLayerByLocation(ly_Construccion,'COMPLETELY_WITHIN',ly_Bosque,'','NEW_SELECTION', 'NOT_INVERT')
+    salida = arcpy.management.CopyFeatures(ly_Construccion, os.path.join(str(GDB_Salida), 'Bosque_ConstrR'))
+    
+    arcpy.management.AddField(salida, 'FC_Origen', 'TEXT')
+    fc_origen_nombre = os.path.basename(Feature_Class_Bosque)
+    arcpy.management.CalculateField(salida, 'FC_Origen', f"'{fc_origen_nombre}'", 'PYTHON')
+    
+    total = arcpy.management.GetCount(salida)
+    if str(total) == '0':
+        arcpy.management.Delete(salida)         
+    return total
+
+def Cerca_DAguaR(GDB_Entrada, GDB_Salida): #Cerca y deposito de agua no se pueden cruzar
+    arcpy.env.workspace = GDB_Entrada
+    DAgua = os.path.join(str(GDB_Entrada),'Hidrografia\DAgua_R')
+    Cerca = os.path.join(str(GDB_Entrada),'ViviendaCiudadTerritorio\Cerca')
+
+    ly_DAgua = arcpy.management.MakeFeatureLayer(DAgua, 'ly_DAgua')
+    ly_Cerca = arcpy.management.MakeFeatureLayer(Cerca, 'ly_Cerca')
+
+    arcpy.management.SelectLayerByLocation(ly_Cerca, 'CROSSED_BY_THE_OUTLINE_OF', ly_DAgua, '', 'NEW_SELECTION', 'NOT_INVERT')
+    copia_select = arcpy.management.CopyFeatures(ly_Cerca, os.path.join(str(GDB_Salida), 'Cerca_DAguaR'))
+    
+    arcpy.management.AddField(copia_select, 'FC_Origen', 'TEXT')
+    fc_origen_nombre = os.path.basename(DAgua)
+    arcpy.management.CalculateField(copia_select, 'FC_Origen', f"'{fc_origen_nombre}'", 'PYTHON')
+    
+    total= arcpy.management.GetCount(copia_select)
+    if str(total) == '0':
+        arcpy.management.Delete(copia_select)
+    return total
+
+def Muro_DAguaR(GDB_Entrada, GDB_Salida): #Muro y deposito de agua no se pueden cruzar
+    arcpy.env.workspace = GDB_Entrada
+    FDAgua = os.path.join(str(GDB_Entrada),'Hidrografia\DAgua_R')
+    FMuro = os.path.join(str(GDB_Entrada),'ViviendaCiudadTerritorio\Muro')
+    
+    ly_FDAgua = arcpy.management.MakeFeatureLayer(FDAgua, 'ly_FDAgua')
+    ly_FMuro = arcpy.management.MakeFeatureLayer(FMuro, 'ly_FMuro')
+    
+    arcpy.management.SelectLayerByLocation(ly_FMuro, 'CROSSED_BY_THE_OUTLINE_OF', ly_FDAgua, '', 'NEW_SELECTION', 'NOT_INVERT')
+    copia_select = arcpy.management.CopyFeatures(ly_FMuro, os.path.join(str(GDB_Salida), 'Muro_DAguaR'))
+    
+    arcpy.management.AddField(copia_select, 'FC_Origen', 'TEXT')
+    fc_origen_nombre = os.path.basename(FDAgua)
+    arcpy.management.CalculateField(copia_select, 'FC_Origen', f"'{fc_origen_nombre}'", 'PYTHON')
+    
+    total= arcpy.management.GetCount(copia_select)
+    if str(total) == '0':
+        arcpy.management.Delete(copia_select)
+    return total
+
+
+def LVia_DAguaR(GDB_Entrada, GDB_Salida): #Limite de via y deposito de agua no se pueden cruzar
+    arcpy.env.workspace = GDB_Entrada
+    DAgua = os.path.join(str(GDB_Entrada),'Hidrografia\DAgua_R')
+    LVia = os.path.join(str(GDB_Entrada),'Transporte\LVia')
+    
+    ly_DAgua = arcpy.management.MakeFeatureLayer(DAgua, 'ly_DAgua')
+    ly_Lvia = arcpy.management.MakeFeatureLayer(LVia, 'ly_Lvia')
+    
+    arcpy.management.SelectLayerByLocation(ly_Lvia, 'CROSSED_BY_THE_OUTLINE_OF', ly_DAgua, '', 'NEW_SELECTION', 'NOT_INVERT')
+    copia_select = arcpy.management.CopyFeatures(ly_Lvia, os.path.join(str(GDB_Salida), 'LVia_DAguaR'))
+    
+    arcpy.management.AddField(copia_select, 'FC_Origen', 'TEXT')
+    fc_origen_nombre = os.path.basename(DAgua)
+    arcpy.management.CalculateField(copia_select, 'FC_Origen', f"'{fc_origen_nombre}'", 'PYTHON')
+    
+    total= arcpy.management.GetCount(copia_select)
+    if str(total) == '0':
+        arcpy.management.Delete(copia_select)
+    return total
+
+code_block ="""
+def estado(a):
+    if (a>1):
+        b = "REVISAR"
+        return b 
+    else: 
+        b = "OMITIR"
+        return b"""
+    
+def DrenajL_CNivel(GDB_Entrada, GDB_Salida): #Curva de nivel no debe cruzar mas de una vez el mismo drenaje   
+    arcpy.env.workspace = GDB_Entrada
+    Feature_Class_Curvas_Nivel = os.path.join(str(GDB_Entrada),'Elevacion\CNivel')
+    Feature_Class_Drenaje_L = os.path.join(str(GDB_Entrada),'Hidrografia\Drenaj_L')
+    Puntos_Intersect = os.path.join(str(GDB_Salida),"Puntos_Intersect")                                       
+    Puntos_Interseccion_Multipar = os.path.join(str(GDB_Salida),"Puntos_Interseccion_Multipar")              
+    Puntos_Interseccion_Multip_stats = os.path.join(str(GDB_Salida),"Puntos_Interseccion_Multip_stats")
+    Puntos_Intersect_Layer = os.path.join(str(GDB_Salida),"Puntos_Intersect_Layer")                          
+    Puntos_Revision = os.path.join(str(GDB_Salida),"DrenajeL_CNivel")   
+                                         
+    # Process: Intersect
+    arcpy.analysis.Intersect([Feature_Class_Curvas_Nivel, Feature_Class_Drenaje_L], Puntos_Intersect, "ALL", "", "POINT")
+    # Process: Multipart To Singlepart
+    arcpy.management.MultipartToSinglepart(Puntos_Intersect, Puntos_Interseccion_Multipar)
+    # Process: Summary Statistics
+    arcpy.analysis.Statistics(Puntos_Interseccion_Multipar, Puntos_Interseccion_Multip_stats, "ORIG_FID COUNT", "ORIG_FID")
+    # Process: Join Field
+    arcpy.management.JoinField(Puntos_Intersect, "OBJECTID", Puntos_Interseccion_Multip_stats, "ORIG_FID", "FREQUENCY")
+    # Process: Add Field
+    arcpy.management.AddField(Puntos_Intersect, "Estado_Intersect", "TEXT", "", "", "", "", "NULLABLE", "NON_REQUIRED", "")
+    #Process: Calculate Field
+    arcpy.management.CalculateField(Puntos_Intersect, "Estado_Intersect", "estado(!FREQUENCY!)", "PYTHON3", code_block)
+    # Process: Make Feature Layer
+    arcpy.management.MakeFeatureLayer(Puntos_Intersect, Puntos_Intersect_Layer, "", "", "OBJECTID OBJECTID VISIBLE NONE;SHAPE SHAPE VISIBLE NONE;FID_Drenaj_L FID_Drenaj_L VISIBLE NONE;DIdentif DIdentif VISIBLE NONE;DEstado DEstado VISIBLE NONE;DDisperso DDisperso VISIBLE NONE;DNombre DNombre VISIBLE NONE;FID_CNivel FID_CNivel VISIBLE NONE;CNIdentif CNIdentif VISIBLE NONE;CNAltura CNAltura VISIBLE NONE;CNTipo CNTipo VISIBLE NONE;FREQUENCY FREQUENCY VISIBLE NONE;Estado_Intersect Estado_Intersect VISIBLE NONE")
+    # Process: Select Layer By Attribute
+    arcpy.management.SelectLayerByAttribute(Puntos_Intersect_Layer, "NEW_SELECTION", "Estado_Intersect = 'REVISAR'")
+    # Process: Feature Class to Feature Class (2)
+    arcpy.conversion.FeatureClassToFeatureClass(Puntos_Intersect_Layer, GDB_Salida, "DrenajeL_CNivel", "", "FREQUENCY \"FREQUENCY\" true true false 0 Long 0 0 ,First,#,Revision_Curvas.gdb\\Puntos_Intersect,FREQUENCY,-1,-1;Estado_Intersect \"Estado_Intersect\" true true false 0 Text 0 0 ,First,#,Revision_Curvas.gdb\\Puntos_Intersect,Estado_Intersect,-1,-1", "")
+    # Process: Alter Field
+    arcpy.management.AlterField(Puntos_Revision, "FREQUENCY", "NumIntersec", "Numero_de_Intersecciones")
+
+    arcpy.management.Delete(Puntos_Intersect)
+    arcpy.management.Delete(Puntos_Interseccion_Multipar)
+    arcpy.management.Delete(Puntos_Interseccion_Multip_stats)
+    arcpy.management.Delete(Puntos_Intersect_Layer)
+    
+    arcpy.management.AddField(Puntos_Revision, 'FC_Origen', 'TEXT')
+    fc_origen_nombre = os.path.basename(Feature_Class_Curvas_Nivel)
+    arcpy.management.CalculateField(Puntos_Revision, 'FC_Origen', f"'{fc_origen_nombre}'", 'PYTHON')
+    
+    total = arcpy.management.GetCount(Puntos_Revision)
+    if str(total) == '0':
+        arcpy.management.Delete(Puntos_Revision)
+    return total
+
+def Cnivel_Piscin(GDB_Entrada, GDB_Salida):
+    arcpy.env.workspace = GDB_Entrada
+    Feature_Class_Curvas_Nivel = os.path.join(str(GDB_Entrada),'Elevacion\Cnivel')
+    Feature_Class_Piscinas= os.path.join(str(GDB_Entrada),'ViviendaCiudadTerritorio\Piscin')
+    
+    ly_curva = arcpy.management.MakeFeatureLayer(Feature_Class_Curvas_Nivel, 'ly_curva')
+    ly_piscina = arcpy.management.MakeFeatureLayer(Feature_Class_Piscinas, 'ly_piscina')
+    
+    arcpy.management.SelectLayerByLocation(ly_curva, 'CROSSED_BY_THE_OUTLINE_OF', ly_piscina, '', 'NEW_SELECTION', 'NOT_INVERT')
+    salida = arcpy.management.CopyFeatures(ly_curva, os.path.join(str(GDB_Salida), 'CNivel_Piscin'))
+    
+    arcpy.management.AddField(salida, 'FC_Origen', 'TEXT')
+    fc_origen_nombre = os.path.basename(Feature_Class_Curvas_Nivel)
+    arcpy.management.CalculateField(salida, 'FC_Origen', f"'{fc_origen_nombre}'", 'PYTHON')
+    
+    total= arcpy.management.GetCount(salida)   
+    if str(total) == '0':
+        arcpy.management.Delete(salida)
+    return total
+
+#Las curvas de nivel no pueden cruzar sobre las piscinas.
+def Cerca_Constr_R(GDB_Entrada, GDB_Salida): 
+    arcpy.env.workspace = GDB_Entrada
+    Feature_Class_Cerca = os.path.join(str(GDB_Entrada),'ViviendaCiudadTerritorio\Cerca')
+    Feature_Class_Construccion = os.path.join(str(GDB_Entrada),'ViviendaCiudadTerritorio\Constr_R')
+    
+    ly_cerca = arcpy.management.MakeFeatureLayer(Feature_Class_Cerca, 'ly_cerca')
+    ly_constru = arcpy.management.MakeFeatureLayer(Feature_Class_Construccion, 'ly_constru')
+    
+    arcpy.management.SelectLayerByLocation(ly_cerca, 'CROSSED_BY_THE_OUTLINE_OF', ly_constru, '', 'NEW_SELECTION', 'NOT_INVERT')
+    salida = arcpy.management.CopyFeatures(ly_cerca, os.path.join(str(GDB_Salida), 'Cerca_ConstrR'))
+    
+    arcpy.management.AddField(salida, 'FC_Origen', 'TEXT')
+    fc_origen_nombre = os.path.basename(Feature_Class_Cerca)
+    arcpy.management.CalculateField(salida, 'FC_Origen', f"'{fc_origen_nombre}'", 'PYTHON')
+    
+    total= arcpy.management.GetCount(salida)  
+    if str(total) == '0':
+        arcpy.management.Delete(salida)
+    else:
+        pass
+    return total 
+
+
+#los depositos de agua no deben intersectar a los bosques.
+def Bosque_DAgua_R(GDB_Entrada, GDB_Salida):
+    arcpy.env.workspace = GDB_Entrada
+    Feature_Class_Bosque = os.path.join(str(GDB_Entrada),'CoberturaTierra\Bosque')
+    Feature_Class_Deposito_Agua= os.path.join(str(GDB_Entrada),'Hidrografia\DAgua_R')
+    
+    salida = arcpy.analysis.Intersect([Feature_Class_Bosque, Feature_Class_Deposito_Agua],os.path.join(str(GDB_Salida),'Bosque_DAguaR'),'ALL','','INPUT')
+    
+    arcpy.management.AddField(salida, 'FC_Origen', 'TEXT')
+    fc_origen_nombre = os.path.basename(Feature_Class_Bosque)
+    arcpy.management.CalculateField(salida, 'FC_Origen', f"'{fc_origen_nombre}'", 'PYTHON')
+    
+    total = arcpy.management.GetCount(salida)
+    if str(total) == '0':
+        arcpy.management.Delete(salida)
+    else:
+        pass
+    return total
+
+
+#Los limites de Via no pueden Cruzar a los muros.
+def LVia_Muro(GDB_Entrada, GDB_Salida):
+    arcpy.env.workspace = GDB_Entrada
+    Feature_Class_LVia = os.path.join(str(GDB_Entrada),'Transporte\LVia')
+    Feature_Class_Muro= os.path.join(str(GDB_Entrada),'ViviendaCiudadTerritorio\Muro')
+    
+    salida = arcpy.analysis.Intersect([Feature_Class_LVia, Feature_Class_Muro],os.path.join(str(GDB_Salida),'LVia_Muro'),'ALL','','POINT')
+
+    arcpy.management.AddField(salida, 'FC_Origen', 'TEXT')
+    fc_origen_nombre = os.path.basename(Feature_Class_LVia)
+    arcpy.management.CalculateField(salida, 'FC_Origen', f"'{fc_origen_nombre}'", 'PYTHON')
+    
+    total = arcpy.management.GetCount(salida)
+    if str(total) == '0':
+        arcpy.management.Delete(salida)
+    else:
+        pass
+    return total
+
+
+#los limites de via no pueden cruzar los poligonos de las zonas duras.
+def LVia_ZDura(GDB_Entrada, GDB_Salida):
+    arcpy.env.workspace = GDB_Entrada
+    Feature_Class_LVia = os.path.join(str(GDB_Entrada),'Transporte\LVia')
+    Feature_Class_Zonas_Duras= os.path.join(str(GDB_Entrada),'ViviendaCiudadTerritorio\ZDura')
+    
+    salida = arcpy.analysis.Intersect([Feature_Class_LVia, Feature_Class_Zonas_Duras],os.path.join(str(GDB_Salida),'LVia_ZDura'),'ALL','','LINE')
+    
+    arcpy.management.AddField(salida, 'FC_Origen', 'TEXT')
+    fc_origen_nombre = os.path.basename(Feature_Class_LVia)
+    arcpy.management.CalculateField(salida, 'FC_Origen', f"'{fc_origen_nombre}'", 'PYTHON')
+    
+    total = arcpy.management.GetCount(salida) 
+    if str(total) == '0':
+        arcpy.management.Delete(salida)
+    else:
+        pass
+    return total
+
+
+##Via_Cercas-----------------------------------------------------------------------------------------------------------------------------------------------
+def LVia_Cerca(GDB_Entrada,GDB_Salida):
+    arcpy.env.workspace = GDB_Entrada
+    LVia = os.path.join(str(GDB_Entrada),'Transporte/LVia')
+    Cerca = os.path.join(str(GDB_Entrada),'ViviendaCiudadTerritorio/Cerca')
+     
+    salida = arcpy.analysis.Intersect([LVia,Cerca], os.path.join(str(GDB_Salida),'LVia_Cerca'),'ALL','','POINT')
+     
+    arcpy.management.AddField(salida, 'FC_Origen', 'TEXT')
+    fc_origen_nombre = os.path.basename(LVia)
+    arcpy.management.CalculateField(salida, 'FC_Origen', f"'{fc_origen_nombre}'", 'PYTHON')
+     
+    total = arcpy.management.GetCount(salida)
+    if str(total) == '0':
+        arcpy.management.Delete(salida)
+    return total
+ 
+ 
+##ConstruccionR_ConstruccionP-----------------------------------------------------------------------------------------------------------------------------------------------
+def ConstruccionR_ConstruccionP(GDB_Entrada,GDB_Salida):
+    arcpy.env.workspace = GDB_Entrada
+    ConstruccionR = os.path.join(str(GDB_Entrada),'ViviendaCiudadTerritorio/Constr_R')
+    ConstruccionP = os.path.join(str(GDB_Entrada),'ViviendaCiudadTerritorio/Constr_P')
+     
+    salida = arcpy.analysis.Intersect([ConstruccionR,ConstruccionP], os.path.join(str(GDB_Salida),'ConstruccionR_ConstruccionP'),'ALL','','POINT')
+     
+    arcpy.management.AddField(salida, 'FC_Origen', 'TEXT')
+    fc_origen_nombre = os.path.basename(ConstruccionR)
+    arcpy.management.CalculateField(salida, 'FC_Origen', f"'{fc_origen_nombre}'", 'PYTHON')
+     
+    total = arcpy.management.GetCount(salida)
+    if str(total) == '0':
+        arcpy.management.Delete(salida)
+    return total
+ 
+ 
+##Via_Deposito----------------------------------------------------------------------------------------------------------------------------------------------
+def Via_DAguaR(GDB_Entrada,GDB_Salida):
+    arcpy.env.workspace = GDB_Entrada
+    Via = os.path.join(str(GDB_Entrada),'Transporte\Via')
+    DAguaR = os.path.join(str(GDB_Entrada),'Hidrografia\DAgua_R')
+    
+    salida = arcpy.analysis.Intersect([Via,DAguaR], os.path.join(str(GDB_Salida),'Via_DAguaR'),'ALL','','LINE')
+    
+    arcpy.management.AddField(salida, 'FC_Origen', 'TEXT')
+    fc_origen_nombre = os.path.basename(Via)
+    arcpy.management.CalculateField(salida, 'FC_Origen', f"'{fc_origen_nombre}'", 'PYTHON')
+    
+    total = arcpy.management.GetCount(salida)
+    if str(total) == '0':
+        arcpy.management.Delete(salida)
+    return total
+
+
+##DepositoR_DrenajeL----------------------------------------------------------------------------------------------------------------------------------------------
+#Se realiza seleccion invertida para dar la excepcion a los depositos tipo pantano
+def Deposito_DrenajeL(GDB_Entrada,GDB_Salida):
+    arcpy.env.workspace = GDB_Entrada
+    DAguaR = os.path.join(str(GDB_Entrada),'Hidrografia\DAgua_R')
+    Drenaj_L = os.path.join(str(GDB_Entrada),'Hidrografia\Drenaj_L')
+
+    ly_DepAgua_Sel = arcpy.management.MakeFeatureLayer(DAguaR, where_clause = 'DATipo <> 5')
+    ly_Drenaj_L = arcpy.management.MakeFeatureLayer(Drenaj_L, 'Drenaj_L_layer')
+    
+    arcpy.management.SelectLayerByLocation(ly_Drenaj_L, 'CROSSED_BY_THE_OUTLINE_OF', ly_DepAgua_Sel, '', 'NEW_SELECTION', 'NOT_INVERT')
+    salida = arcpy.management.CopyFeatures(ly_Drenaj_L, os.path.join(str(GDB_Salida), 'DepAR_DrenajL'))
+    
+    arcpy.management.AddField(salida, 'FC_Origen', 'TEXT')
+    fc_origen_nombre = os.path.basename(DAguaR)
+    arcpy.management.CalculateField(salida, 'FC_Origen', f"'{fc_origen_nombre}'", 'PYTHON')
+    
+    total= arcpy.management.GetCount(salida)
+    if str(total) == '0':
+        arcpy.management.Delete(salida)    
+    return total
+
+##DepositoR_DrenajeR----------------------------------------------------------------------------------------------------------------------------------------------
+def Deposito_DrenajeR(GDB_Entrada,GDB_Salida):
+    arcpy.env.workspace = GDB_Entrada
+    Drenaj_R = os.path.join(str(GDB_Entrada),'Hidrografia\Drenaj_R')
+    DAguaR = os.path.join(str(GDB_Entrada),'Hidrografia\DAgua_R')
+    
+    ly_DepAgua_Sel = arcpy.management.MakeFeatureLayer(DAguaR, where_clause = 'DATipo <> 5')
+    ly_DrenajeR_Sel = arcpy.management.SelectLayerByAttribute(Drenaj_R, "NEW_SELECTION", 'DTipo = 1')
+
+    salida = arcpy.analysis.Intersect([ly_DepAgua_Sel,ly_DrenajeR_Sel], os.path.join(str(GDB_Salida),'DAguaR_DrenajR'),'ALL','','INPUT')
+    
+    arcpy.management.AddField(salida, 'FC_Origen', 'TEXT')
+    fc_origen_nombre = os.path.basename(Drenaj_R)
+    arcpy.management.CalculateField(salida, 'FC_Origen', f"'{fc_origen_nombre}'", 'PYTHON')
+    
+    total = arcpy.management.GetCount(salida)
+    if str(total) == '0':
+        arcpy.management.Delete(salida)
+    return total
+
+##JagueyP_JagueyR----------------------------------------------------------------------------------------------------------------------------------------------
+#Se realiza seleccion para unicamente los tipo Jaguey en el feature de puntos y poligonos
+def JagueyP_JagueyR(GDB_Entrada,GDB_Salida):
+    arcpy.env.workspace = GDB_Entrada
+    DAguaR = os.path.join(str(GDB_Entrada),'Hidrografia\DAgua_R')
+    DAguaP = os.path.join(str(GDB_Entrada),'Hidrografia\DAgua_P')
+    
+    DAguaR_layer = arcpy.management.MakeFeatureLayer(DAguaR, 'DAguaR_layer')
+    DAguaP_layer = arcpy.management.MakeFeatureLayer(DAguaP, 'DAguaP_layer')
+    
+    arcpy.management.SelectLayerByAttribute(DAguaP_layer,'NEW_SELECTION', "DATipo = 1", False)
+    arcpy.management.SelectLayerByAttribute(DAguaR_layer,'NEW_SELECTION', "DATipo = 6", False)
+    salida = arcpy.analysis.Intersect([DAguaP_layer,DAguaR_layer], os.path.join(str(GDB_Salida),'JagueyP_JagueyR'),'ALL','','POINT')
+    
+    arcpy.management.AddField(salida, 'FC_Origen', 'TEXT')
+    fc_origen_nombre = os.path.basename(DAguaR)
+    arcpy.management.CalculateField(salida, 'FC_Origen', f"'{fc_origen_nombre}'", 'PYTHON')
+    
+    total = arcpy.management.GetCount(salida)
+    if str(total) == '0':
+        arcpy.management.Delete(salida)
+    return total
+
+
+def via_constr_r(GDB_Entrada,GDB_Salida):
+    arcpy.env.workspace = GDB_Entrada
+    Via = os.path.join(str(GDB_Entrada),'Transporte\Via')
+    ConstrR = os.path.join(str(GDB_Entrada),'ViviendaCiudadTerritorio\Constr_R')
+    
+    Via_layer = arcpy.management.MakeFeatureLayer(Via, 'Via_layer')
+    ConstrR_layer = arcpy.management.MakeFeatureLayer(ConstrR, 'ConstR_layer')
+    
+    arcpy.management.SelectLayerByLocation(Via_layer, 'CROSSED_BY_THE_OUTLINE_OF', ConstrR_layer, '', 'NEW_SELECTION', 'NOT_INVERT')
+    copia_select = arcpy.management.CopyFeatures(Via_layer, os.path.join(str(GDB_Salida), 'Via_ConstrR'))
+    
+    arcpy.management.AddField(copia_select, 'FC_Origen', 'TEXT')
+    fc_origen_nombre = os.path.basename(Via)
+    arcpy.management.CalculateField(copia_select, 'FC_Origen', f"'{fc_origen_nombre}'", 'PYTHON')
+    
+    total= arcpy.management.GetCount(copia_select)
+    if str(total) == '0':
+        arcpy.management.Delete(copia_select)
+    return total
+
+
+def muro_constrR(GDB_Entrada,GDB_Salida):
+    arcpy.env.workspace = GDB_Entrada
+    Muro = os.path.join(str(GDB_Entrada),'ViviendaCiudadTerritorio\Muro')
+    ConstrR = os.path.join(str(GDB_Entrada),'ViviendaCiudadTerritorio\Constr_R')
+    
+    Muro_layer = arcpy.management.MakeFeatureLayer(Muro, 'Muro_layer')
+    ConstrR_layer = arcpy.management.MakeFeatureLayer(ConstrR, 'ConstR_layer')
+    
+    arcpy.management.SelectLayerByLocation(Muro_layer, 'CROSSED_BY_THE_OUTLINE_OF', ConstrR_layer, '', 'NEW_SELECTION', 'NOT_INVERT')
+    copia_select = arcpy.management.CopyFeatures(Muro_layer, os.path.join(str(GDB_Salida), 'Muro_constrR'))
+    
+    arcpy.management.AddField(copia_select, 'FC_Origen', 'TEXT')
+    fc_origen_nombre = os.path.basename(Muro)
+    arcpy.management.CalculateField(copia_select, 'FC_Origen', f"'{fc_origen_nombre}'", 'PYTHON')
+    
+    total= arcpy.management.GetCount(copia_select)
+    if str(total) == '0':
+        arcpy.management.Delete(copia_select)
+    return total
+
+
+def via_zdura(GDB_Entrada,GDB_Salida):
+    arcpy.env.workspace = GDB_Entrada
+    ZDura = os.path.join(str(GDB_Entrada),'ViviendaCiudadTerritorio\ZDura')
+    Via = os.path.join(str(GDB_Entrada),'Transporte\Via')
+    
+    ZDura_layer = arcpy.management.MakeFeatureLayer(ZDura, 'ZDura_layer')
+    Via_layer = arcpy.management.MakeFeatureLayer(Via, 'Via_layer')
+    
+    arcpy.management.SelectLayerByLocation(Via_layer, 'CROSSED_BY_THE_OUTLINE_OF', ZDura_layer, '', 'NEW_SELECTION', 'NOT_INVERT')
+    copia_select = arcpy.management.CopyFeatures(Via_layer, os.path.join(str(GDB_Salida), 'Via_ZDura'))
+    
+    arcpy.management.AddField(copia_select, 'FC_Origen', 'TEXT')
+    fc_origen_nombre = os.path.basename(ZDura)
+    arcpy.management.CalculateField(copia_select, 'FC_Origen', f"'{fc_origen_nombre}'", 'PYTHON')
+    
+    total= arcpy.management.GetCount(copia_select)
+    if str(total) == '0':
+        arcpy.management.Delete(copia_select)
+    return total
+
+def constrR_TP(GDB_Entrada,GDB_Salida):
+    arcpy.env.workspace = GDB_Entrada
+    Tpsp = os.path.join(str(GDB_Entrada),'InfraestructuraServicios\TSPubl')
+    ConstrR = os.path.join(str(GDB_Entrada),'ViviendaCiudadTerritorio\Constr_R')
+    
+    salida = arcpy.analysis.Intersect([Tpsp,ConstrR], os.path.join(str(GDB_Salida),'TSPubl_ConstrR'),'ALL','','POINT')
+    
+    arcpy.management.AddField(salida, 'FC_Origen', 'TEXT')
+    fc_origen_nombre = os.path.basename(Tpsp)
+    arcpy.management.CalculateField(salida, 'FC_Origen', f"'{fc_origen_nombre}'", 'PYTHON')
+    
+    total = arcpy.management.GetCount(salida)
+    if str(total) == '0':
+        arcpy.management.Delete(salida)
+    return total
+
+def constrR_PD(GDB_Entrada,GDB_Salida):
+    arcpy.env.workspace = GDB_Entrada
+    PDistr = os.path.join(str(GDB_Entrada),'InfraestructuraServicios\PDistr')
+    ConstrR = os.path.join(str(GDB_Entrada),'ViviendaCiudadTerritorio\Constr_R')
+    
+    salida = arcpy.analysis.Intersect([PDistr,ConstrR], os.path.join(str(GDB_Salida),'PDPubl_ConstrR'),'ALL','','POINT')
+    
+    arcpy.management.AddField(salida, 'FC_Origen', 'TEXT')
+    fc_origen_nombre = os.path.basename(PDistr)
+    arcpy.management.CalculateField(salida, 'FC_Origen', f"'{fc_origen_nombre}'", 'PYTHON')
+    
+    total = arcpy.management.GetCount(salida)
+    if str(total) == '0':
+        arcpy.management.Delete(salida)
+    return total
+
+##Deposito_Deposito----------------------------------------------------------------------------------------------------------------------------------------------
+def Deposito_Deposito(GDB_Entrada,GDB_Salida):
+    arcpy.env.workspace = GDB_Entrada
+    DAguaR = os.path.join(str(GDB_Entrada),'Hidrografia\DAgua_R')
+    DAguaP = os.path.join(str(GDB_Entrada),'Hidrografia\DAgua_P')
+    
+    salida = arcpy.analysis.Intersect([DAguaR, DAguaP], os.path.join(str(GDB_Salida),'DepositoR_DepositoP'),'ALL','','POINT')
+    
+    arcpy.management.AddField(salida, 'FC_Origen', 'TEXT')
+    fc_origen_nombre = os.path.basename(DAguaR)
+    arcpy.management.CalculateField(salida, 'FC_Origen', f"'{fc_origen_nombre}'", 'PYTHON')
+    
+    total = arcpy.management.GetCount(salida)
+    if str(total) == '0':
+        arcpy.management.Delete(salida)
+    return total
+
+#Validar intersección  de bosque con bosque --------------------------------------------------------------------
+def Bosque_Bosque(GDB_Entrada,GDB_Salida):
+    arcpy.env.workspace = GDB_Entrada
+    Bosque1 = os.path.join(str(GDB_Entrada), 'CoberturaTierra\Bosque')
+    
+    salida = arcpy.analysis.Intersect([Bosque1], os.path.join(str(GDB_Salida),'Bosque_Bosque'),'ALL','','INPUT')
+    
+    arcpy.management.AddField(salida, 'FC_Origen', 'TEXT')
+    fc_origen_nombre = os.path.basename(Bosque1)
+    arcpy.management.CalculateField(salida, 'FC_Origen', f"'{fc_origen_nombre}'", 'PYTHON')
+    
+    total = arcpy.management.GetCount(salida)
+    if str(total) == '0':
+        arcpy.management.Delete(salida)
+    return total
+
+#Validar Bosque - Drenaje R------------------------------------------------------------------------------------
+def Bosque_Drenaje_R(GDB_Entrada, GDB_Salida):
+    arcpy.env.workspace = GDB_Entrada
+    Feature_Class_Bosque = os.path.join(str(GDB_Entrada),'CoberturaTierra\Bosque')
+    Feature_Class_Drenaje_Agua= os.path.join(str(GDB_Entrada),'Hidrografia\Drenaj_R')
+    
+    salida = arcpy.analysis.Intersect([Feature_Class_Bosque, Feature_Class_Drenaje_Agua],os.path.join(str(GDB_Salida),'Bosque_DrenajR'),'ALL','','INPUT')
+    
+    arcpy.management.AddField(salida, 'FC_Origen', 'TEXT')
+    fc_origen_nombre = os.path.basename(Feature_Class_Bosque)
+    arcpy.management.CalculateField(salida, 'FC_Origen', f"'{fc_origen_nombre}'", 'PYTHON')
+    
+    total = arcpy.management.GetCount(salida)
+    if str(total) == '0':
+        arcpy.management.Delete(salida)
+    else:
+        pass
+    return total
+
+#Validar cerca y Drenajes Permanentes ------------------------------------------------------------------------------------ ERROR CORREGIDO
+def Cerca_DrenajeL(GDB_Entrada,GDB_Salida):
+    arcpy.env.workspace = GDB_Entrada
+    Cerca = os.path.join(str(GDB_Entrada), 'ViviendaCiudadTerritorio\Cerca')
+    Drenaje_L = os.path.join(str(GDB_Entrada), 'Hidrografia\Drenaj_L')
+    
+    Drenaje_L_layer = arcpy.management.MakeFeatureLayer(Drenaje_L, "Drenaje_L_layer")
+    
+    arcpy.management.SelectLayerByAttribute(Drenaje_L_layer,'NEW_SELECTION', "DEstado = 1", False)
+    salida = arcpy.analysis.Intersect([Drenaje_L_layer,Cerca], os.path.join(str(GDB_Salida),'Cerca_DrenajeL'),'ALL','','POINT')
+    
+    arcpy.management.AddField(salida, 'FC_Origen', 'TEXT')
+    fc_origen_nombre = os.path.basename(Cerca)
+    arcpy.management.CalculateField(salida, 'FC_Origen', f"'{fc_origen_nombre}'", 'PYTHON')
+    
+    total = arcpy.management.GetCount(salida)
+    if str(total) == '0':
+        arcpy.management.Delete(salida)
+    return total
+
+#Validar cicloruta con límite de vía -----------------------------------------------------------------------
+def Cicloruta_Lvia(GDB_Entrada, GDB_Salida):
+    arcpy.env.workspace = GDB_Entrada
+    Feature_Class_Cicloruta = os.path.join(str(GDB_Entrada),'Transporte\Ciclor')
+    Feature_Class_Limitevia= os.path.join(str(GDB_Entrada),'Transporte\LVia')
+    
+    salida = arcpy.analysis.Intersect([Feature_Class_Cicloruta, Feature_Class_Limitevia],os.path.join(str(GDB_Salida),'Cicloruta_Lvia'),'ALL','','POINT')
+    
+    arcpy.management.AddField(salida, 'FC_Origen', 'TEXT')
+    fc_origen_nombre = os.path.basename(Feature_Class_Cicloruta)
+    arcpy.management.CalculateField(salida, 'FC_Origen', f"'{fc_origen_nombre}'", 'PYTHON')
+    
+    total = arcpy.management.GetCount(salida)
+    if str(total) == '0':
+        arcpy.management.Delete(salida)
+    else:
+        pass
+    return total
+
+#Validar Construcción P -Construcción P------------------------------------------------------------------------
+def ConstruccionP_ConstruccionP(GDB_Entrada, GDB_Salida):
+    arcpy.env.workspace = GDB_Entrada
+    Feature_Class_ConstruccionP = os.path.join(str(GDB_Entrada),'ViviendaCiudadTerritorio\Constr_P')
+    
+    salida = arcpy.analysis.Intersect([Feature_Class_ConstruccionP],os.path.join(str(GDB_Salida),'ConstrP'),'ALL','','POINT')
+    
+    arcpy.management.AddField(salida, 'FC_Origen', 'TEXT')
+    fc_origen_nombre = os.path.basename(Feature_Class_ConstruccionP)
+    arcpy.management.CalculateField(salida, 'FC_Origen', f"'{fc_origen_nombre}'", 'PYTHON')
+    
+    total = arcpy.management.GetCount(salida)
+    if str(total) == '0':
+        arcpy.management.Delete(salida)
+    else:
+        pass
+    return total
+
+#Validar Construcción R -Construcción R--------------------------------------------------------------------
+def ConstruccionR_ConstruccionR(GDB_Entrada, GDB_Salida):
+    arcpy.env.workspace = GDB_Entrada
+    Feature_Class_ConstruccionR = os.path.join(str(GDB_Entrada),'ViviendaCiudadTerritorio\Constr_R')
+    
+    salida = arcpy.analysis.Intersect([Feature_Class_ConstruccionR], os.path.join(str(GDB_Salida), 'ConstrR'), 'ALL', '', 'INPUT')
+    
+    arcpy.management.AddField(salida, 'FC_Origen', 'TEXT')
+    fc_origen_nombre = os.path.basename(Feature_Class_ConstruccionR)
+    arcpy.management.CalculateField(salida, 'FC_Origen', f"'{fc_origen_nombre}'", 'PYTHON')
+
+    total = arcpy.management.GetCount(salida)
+    if str(total) == '0':
+        arcpy.management.Delete(salida)
+    else:
+        pass
+    return total
+# Validar Drenaje R - Curva de Nivel 38
+
+def DrenajR_CNivel(GDB_Entrada, GDB_Salida): #Curva de nivel no debe cruzar mas de una vez el mismo drenaje  
+    arcpy.env.workspace = GDB_Entrada
+    Feature_Class_Curvas_Nivel = os.path.join(str(GDB_Entrada),'Elevacion\CNivel')
+    Feature_Class_Drenaje_L = os.path.join(str(GDB_Entrada),'Hidrografia\Drenaj_R')
+    Puntos_Intersect = os.path.join(str(GDB_Salida),"Puntos_Intersect")                                      
+    Puntos_Interseccion_Multipar = os.path.join(str(GDB_Salida),"Puntos_Interseccion_Multipar")              
+    Puntos_Interseccion_Multip_stats = os.path.join(str(GDB_Salida),"Puntos_Interseccion_Multip_stats")
+    Puntos_Intersect_Layer = os.path.join(str(GDB_Salida),"Puntos_Intersect_Layer")                          
+    Puntos_Revision = os.path.join(str(GDB_Salida),"DrenajeR_CNivel")                                        
+
+    # Process: Intersect
+    arcpy.analysis.Intersect([Feature_Class_Curvas_Nivel, Feature_Class_Drenaje_L], Puntos_Intersect, "ALL", "", "POINT")
+    # Process: Multipart To Singlepart
+    arcpy.management.MultipartToSinglepart(Puntos_Intersect, Puntos_Interseccion_Multipar)
+    # Process: Summary Statistics
+    arcpy.analysis.Statistics(Puntos_Interseccion_Multipar, Puntos_Interseccion_Multip_stats, "ORIG_FID COUNT", "ORIG_FID")
+    # Process: Join Field
+    arcpy.management.JoinField(Puntos_Intersect, "OBJECTID", Puntos_Interseccion_Multip_stats, "ORIG_FID", "FREQUENCY")
+    # Process: Add Field
+    arcpy.management.AddField(Puntos_Intersect, "Estado_Intersect", "TEXT", "", "", "", "", "NULLABLE", "NON_REQUIRED", "")
+    #Process: Calculate Field
+    arcpy.management.CalculateField(Puntos_Intersect, "Estado_Intersect", "estado(!FREQUENCY!)", "PYTHON3", code_block)
+    # Process: Make Feature Layer
+    arcpy.management.MakeFeatureLayer(Puntos_Intersect, Puntos_Intersect_Layer, "", "", "OBJECTID OBJECTID VISIBLE NONE;SHAPE SHAPE VISIBLE NONE;FID_Drenaj_L FID_Drenaj_L VISIBLE NONE;DIdentif DIdentif VISIBLE NONE;DEstado DEstado VISIBLE NONE;DDisperso DDisperso VISIBLE NONE;DNombre DNombre VISIBLE NONE;FID_CNivel FID_CNivel VISIBLE NONE;CNIdentif CNIdentif VISIBLE NONE;CNAltura CNAltura VISIBLE NONE;CNTipo CNTipo VISIBLE NONE;FREQUENCY FREQUENCY VISIBLE NONE;Estado_Intersect Estado_Intersect VISIBLE NONE")
+    # Process: Select Layer By Attribute
+    arcpy.management.SelectLayerByAttribute(Puntos_Intersect_Layer, "NEW_SELECTION", "Estado_Intersect = 'REVISAR'")
+    # Process: Feature Class to Feature Class (2)
+    arcpy.conversion.FeatureClassToFeatureClass(Puntos_Intersect_Layer, GDB_Salida, "DrenajeR_CNivel", "", "FREQUENCY \"FREQUENCY\" true true false 0 Long 0 0 ,First,#,Revision_Curvas.gdb\\Puntos_Intersect,FREQUENCY,-1,-1;Estado_Intersect \"Estado_Intersect\" true true false 0 Text 0 0 ,First,#,Revision_Curvas.gdb\\Puntos_Intersect,Estado_Intersect,-1,-1", "")
+    # Process: Alter Field
+    arcpy.management.AlterField(Puntos_Revision, "FREQUENCY", "NumIntersec", "Numero_de_Intersecciones")
+   
+    # Cursor para buscar los registros con FREQUENCY igual a 2 y eliminarlos
+    with arcpy.da.UpdateCursor(Puntos_Revision, ['NumIntersec']) as cursor:
+        for row in cursor:
+            if row[0] == 2:
+                cursor.deleteRow()
+
+    arcpy.management.Delete(Puntos_Intersect)
+    arcpy.management.Delete(Puntos_Interseccion_Multipar)
+    arcpy.management.Delete(Puntos_Interseccion_Multip_stats)
+    arcpy.management.Delete(Puntos_Intersect_Layer)
+   
+    arcpy.management.AddField(Puntos_Revision, 'FC_Origen', 'TEXT')
+    fc_origen_nombre = os.path.basename(Feature_Class_Curvas_Nivel)
+    arcpy.management.CalculateField(Puntos_Revision, 'FC_Origen', f"'{fc_origen_nombre}'", 'PYTHON')
+   
+    total = arcpy.management.GetCount(Puntos_Revision)
+    if str(total) == '0':
+        arcpy.Delete_management(Puntos_Revision)
+    return total
+
+# # Validar Nombre Geográfico - Construcción P 1K, 10K, 25K (Intersect)
+def NGeogr_Constr_P(GDB_Entrada,GDB_Salida):
+    arcpy.env.workspace = GDB_Entrada
+    NGeogr = os.path.join(str(GDB_Entrada),'NombresGeograficos/NGeogr')
+    ConstruccionP = os.path.join(str(GDB_Entrada),'ViviendaCiudadTerritorio/Constr_P')
+     
+    salida = arcpy.analysis.Intersect([NGeogr,ConstruccionP], os.path.join(str(GDB_Salida),'NGeogr_ConstrP'),'ALL','','POINT')
+     
+    arcpy.management.AddField(salida, 'FC_Origen', 'TEXT')
+    fc_origen_nombre = os.path.basename(NGeogr)
+    arcpy.management.CalculateField(salida, 'FC_Origen', f"'{fc_origen_nombre}'", 'PYTHON')
+     
+    total = arcpy.management.GetCount(salida)
+    if str(total) == '0':
+        arcpy.Delete_management(salida)
+    return total
+
+
+# # Validar Nombre Geográfico - Limite de Vía 
+def NombreGeo_Lvia (GDB_Entrada,GDB_Salida):
+    arcpy.env.workspace = GDB_Entrada
+    NGeogr = os.path.join(str(GDB_Entrada),'NombresGeograficos/NGeogr')
+    LVia = os.path.join(str(GDB_Entrada),'Transporte\LVia')
+     
+    salida = arcpy.analysis.Intersect([NGeogr,LVia], os.path.join(str(GDB_Salida),'NGeogr_LVia'),'ALL','','POINT')
+     
+    arcpy.management.AddField(salida, 'FC_Origen', 'TEXT')
+    fc_origen_nombre = os.path.basename(NGeogr)
+    arcpy.management.CalculateField(salida, 'FC_Origen', f"'{fc_origen_nombre}'", 'PYTHON')
+     
+    total = arcpy.management.GetCount(salida)
+    if str(total) == '0':
+        arcpy.Delete_management(salida)
+    return total
+
+
+# Validar Nombre Geográfico con Nombre Geográfico
+def NombreGeo_NombreGeo (GDB_Entrada,GDB_Salida):
+    arcpy.env.workspace = GDB_Entrada
+    NGeogr = os.path.join(str(GDB_Entrada),'NombresGeograficos/NGeogr')
+     
+    salida = arcpy.analysis.Intersect([NGeogr], os.path.join(str(GDB_Salida),'NGeogr_NGeogr'),'ALL','','POINT')
+     
+    arcpy.management.AddField(salida, 'FC_Origen', 'TEXT')
+    fc_origen_nombre = os.path.basename(NGeogr)
+    arcpy.management.CalculateField(salida, 'FC_Origen', f"'{fc_origen_nombre}'", 'PYTHON')
+     
+    total = arcpy.management.GetCount(salida)
+    if str(total) == '0':
+        arcpy.Delete_management(salida)
+    return total
+
+
+# # Validar Punto de Distribucion vs Deposito de Agua R
+def PDistr_DAguaR (GDB_Entrada,GDB_Salida):
+    arcpy.env.workspace = GDB_Entrada
+    PDistr = os.path.join(str(GDB_Entrada),'InfraestructuraServicios\PDistr')
+    DAguaR = os.path.join(str(GDB_Entrada),'Hidrografia\DAgua_R')
+     
+    salida = arcpy.analysis.Intersect([PDistr,DAguaR], os.path.join(str(GDB_Salida),'PDistr_DAguaR'),'ALL','','POINT')
+     
+    arcpy.management.AddField(salida, 'FC_Origen', 'TEXT')
+    fc_origen_nombre = os.path.basename(PDistr)
+    arcpy.management.CalculateField(salida, 'FC_Origen', f"'{fc_origen_nombre}'", 'PYTHON')
+     
+    total = arcpy.management.GetCount(salida)
+    if str(total) == '0':
+        arcpy.Delete_management(salida)
+    return total
+
+    
+# # Validar Vía (Tipo Primaria, secundaria y terciaria) - Cerca
+def Vias_Cerca(GDB_Entrada, GDB_Salida): 
+    arcpy.env.workspace = GDB_Entrada
+    Via = os.path.join(str(GDB_Entrada),'Transporte\Via')
+    Cerca = os.path.join(str(GDB_Entrada), 'ViviendaCiudadTerritorio\Cerca')
+    
+    ly_via = arcpy.management.MakeFeatureLayer(Via, "ly_via")
+    criterio_via = '"VTipo" IN (1, 2, 3)'
+    
+    arcpy.management.SelectLayerByAttribute(ly_via, "NEW_SELECTION", criterio_via, "NON_INVERT")
+    salida = arcpy.analysis.Intersect([ly_via,Cerca], os.path.join(str(GDB_Salida),'via_Cerca'),'ALL','','POINT')
+    
+    arcpy.management.AddField(salida, 'FC_Origen', 'TEXT')
+    fc_origen_nombre = os.path.basename(Via)
+    arcpy.management.CalculateField(salida, 'FC_Origen', f"'{fc_origen_nombre}'", 'PYTHON')
+    
+    total = arcpy.management.GetCount(salida)
+    if str(total) == '0':
+        arcpy.Delete_management(salida)
+    return total
+
+# # Validar Vía (Tipo Primaria, secundaria y terciaria) - Drenaje (Permanente)
+def Vias_Drenaj(GDB_Entrada, GDB_Salida): 
+    arcpy.env.workspace = GDB_Entrada
+    Via = os.path.join(str(GDB_Entrada),'Transporte\Via')
+    Drenaj_L = os.path.join(str(GDB_Entrada),'Hidrografia\Drenaj_L')
+    
+    ly_via = arcpy.management.CopyFeatures(Via, os.path.join(str(GDB_Salida),'ly_via'))
+    ly_Drenaj = arcpy.management.CopyFeatures(Drenaj_L, os.path.join(str(GDB_Salida),'ly_Drenaj'))
+    
+    via_select = arcpy.management.SelectLayerByAttribute(ly_via, "NEW_SELECTION", 'VTipo IN (1, 2, 3)')
+    via_def = arcpy.management.CopyFeatures(via_select, os.path.join(str(GDB_Salida), 'ly_via_copy'))
+    
+    drenaje_select = arcpy.management.SelectLayerByAttribute(ly_Drenaj, "NEW_SELECTION", 'DEstado = 1')
+    drenaje_def = arcpy.management.CopyFeatures(drenaje_select, os.path.join(str(GDB_Salida),'ly_drenajL_copy'))
+
+    salida = arcpy.analysis.Intersect([via_def, drenaje_def], os.path.join(str(GDB_Salida), 'Via_DrenajL'), 'ALL', '', 'POINT')
+    
+    arcpy.management.AddField(salida, 'FC_Origen', 'TEXT')
+    fc_origen_nombre = os.path.basename(Via)
+    arcpy.management.CalculateField(salida, 'FC_Origen', f"'{fc_origen_nombre}'", 'PYTHON')
+    
+    arcpy.Delete_management(ly_via)
+    arcpy.Delete_management(ly_Drenaj)
+    arcpy.Delete_management(via_def)
+    arcpy.Delete_management(drenaje_def)
+    
+    total = arcpy.management.GetCount(salida)
+    if str(total) == '0':
+        arcpy.Delete_management(salida)
+    return total
+    
+
+# Validar Drenaje L - Drenaje R
+
+def DrenajeL_DrenajeR(GDB_Entrada, GDB_Salida):
+    arcpy.env.workspace = GDB_Entrada
+    DrenajeL = os.path.join(GDB_Entrada, 'Hidrografia\Drenaj_L')
+    DrenajeR = os.path.join(GDB_Entrada, 'Hidrografia\Drenaj_R')
+    
+    ly_DrenajeL = arcpy.management.CopyFeatures(DrenajeL, os.path.join(str(GDB_Salida), 'ly_DrenajeL'))
+    ly_DrenajeR = arcpy.management.CopyFeatures(DrenajeR, os.path.join(str(GDB_Salida), 'ly_DrenajeR'))
+    
+    drenajeR_select = arcpy.management.SelectLayerByAttribute(ly_DrenajeR, "NEW_SELECTION", 'DTipo = 1')
+
+    select_location = arcpy.management.SelectLayerByLocation(ly_DrenajeL, 'CROSSED_BY_THE_OUTLINE_OF', drenajeR_select, '', 'NEW_SELECTION')
+    salida = arcpy.management.CopyFeatures(select_location, os.path.join(str(GDB_Salida), 'DrenajeL_DrenajeR'))
+    
+    arcpy.management.AddField(salida, 'FC_Origen', 'TEXT')
+    fc_origen_nombre = os.path.basename(DrenajeL)
+    arcpy.management.CalculateField(salida, 'FC_Origen', f"'{fc_origen_nombre}'", 'PYTHON')
+    
+    arcpy.Delete_management(ly_DrenajeL)
+    arcpy.Delete_management(ly_DrenajeR)
+
+    total= arcpy.management.GetCount(salida)
+    if str(total) == '0':
+        arcpy.Delete_management(salida)
+    return total
+
+# Validar Tuberia Vs Construccion_R
+def ConstrR_Tuberi(GDB_Entrada, GDB_Salida):
+    arcpy.env.workspace = GDB_Entrada
+    Constr_R = os.path.join(GDB_Entrada, 'ViviendaCiudadTerritorio/Constr_R')
+    Tuberi = os.path.join(GDB_Entrada, 'InfraestructuraServicios/Tuberi')
+    
+    ly_Constr = arcpy.management.MakeFeatureLayer(Constr_R, "ly_Constr")
+    ly_Tuberi = arcpy.management.MakeFeatureLayer(Tuberi, "ly_Tuberi")
+    
+    arcpy.management.SelectLayerByLocation(ly_Tuberi, 'CROSSED_BY_THE_OUTLINE_OF', ly_Constr, '', 'NEW_SELECTION', 'NOT_INVERT')
+    salida = arcpy.management.CopyFeatures(ly_Tuberi, os.path.join(str(GDB_Salida), 'ConstrR_Tuberi'))
+    
+    arcpy.management.AddField(salida, 'FC_Origen', 'TEXT')
+    fc_origen_nombre = os.path.basename(Constr_R)
+    arcpy.management.CalculateField(salida, 'FC_Origen', f"'{fc_origen_nombre}'", 'PYTHON')
+    
+    total= arcpy.management.GetCount(salida)
+    if str(total) == '0':
+        arcpy.Delete_management(salida)
+    return total
+
+
+if __name__ ==  '__main__':
+    GDB_Salida = arcpy.management.CreateFileGDB(Ruta_Salida, 'Validacion_DataReviewer')
+    arcpy.AddMessage("--------------------------RESULTADOS--------------------------")
+    if R1 == 'true': #LVia_ConstrR
+        arcpy.AddMessage("--------------------------------------------------------------")
+        arcpy.AddMessage("Validando Topologia entre Limite Via y Construccion")
+        total = LVia_ConstrR(GDB_Entrada, GDB_Salida)
+        if str(total) == '0':
+            arcpy.AddMessage("Se encontraron " + str(total) + " errores en total")
+        else:
+            arcpy.AddMessage("Se encontraron " + str(total) + " errores en total \n->Validar en  Feature: LVia_ConstrR")
+
+    # if R2 == 'true': #Via_DrenajL
+    #     arcpy.AddMessage("\n--------------------------------------------------------------")
+    #     arcpy.AddMessage("Validando Topologia entre Via y Drenaje")
+    #     total = Via_DrenajL(GDB_Entrada, Ruta_Salida, GDB_Salida)
+    #     if str(total) == '0':
+    #         arcpy.AddMessage("Se encontraron " + str(total) + " errores en total")
+    #     else:
+    #         arcpy.AddMessage("Se encontraron " + str(total) + " errores en total \n->Validar en  Feature: Via_DrenajL")
+
+    if R3 == 'true': #Via_Bosque        
+        arcpy.AddMessage("\n--------------------------------------------------------------")
+        arcpy.AddMessage("Validando Topologia entre Via y Bosque")
+        total = Via_Bosque(GDB_Entrada, GDB_Salida)
+        if str(total) == '0':
+            arcpy.AddMessage("Se encontraron " + str(total) + " errores en total")
+        else:
+            arcpy.AddMessage("Se encontraron " + str(total) + " errores en total \n->Validar en  Feature: Via_Bosque")
+
+    if R4 == 'true': #DAguaR_CNivel  
+        arcpy.AddMessage("\n--------------------------------------------------------------")
+        arcpy.AddMessage("Validando Topologia entre Deposito de agua y Curva de nivel")
+        total = DAguaR_CNivel(GDB_Entrada, GDB_Salida)
+        if str(total) == '0':
+            arcpy.AddMessage("Se encontraron " + str(total) + " errores en total")
+        else:
+            arcpy.AddMessage("Se encontraron " + str(total) + " errores en total \n->Validar en  Feature: DAguaR_CNivel")
+
+    if R5 == 'true': #Bosque_ConstrR   
+        arcpy.AddMessage("\n--------------------------------------------------------------")
+        arcpy.AddMessage("Validando Topologia entre Bosque y Construccion")
+        total = Bosque_ConstrR(GDB_Entrada, GDB_Salida)
+        if str(total) == '0':
+            arcpy.AddMessage("Se encontraron " + str(total) + " errores en total")
+        else:
+            arcpy.AddMessage("Se encontraron " + str(total) + " errores en total \n->Validar en  Feature: Bosque_ConstrR")
+
+    if R6 == 'true': #Cerca_DAguaR  
+        arcpy.AddMessage("\n--------------------------------------------------------------")
+        arcpy.AddMessage("Validando Topologia entre Cerca y Deposito de agua")
+        total = Cerca_DAguaR(GDB_Entrada, GDB_Salida)
+        if str(total) == '0':
+            arcpy.AddMessage("Se encontraron " + str(total) + " errores en total")
+        else:
+            arcpy.AddMessage("Se encontraron " + str(total) + " errores en total \n->Validar en  Feature: Cerca_DAguaR")
+
+    if R7 == 'true': #Muro_DAguaR 
+        arcpy.AddMessage("\n--------------------------------------------------------------")
+        arcpy.AddMessage("Validando Topologia entre Muro y Deposito de agua")
+        total = Muro_DAguaR(GDB_Entrada, GDB_Salida)
+        if str(total) == '0':
+            arcpy.AddMessage("Se encontraron " + str(total) + " errores en total")
+        else:
+            arcpy.AddMessage("Se encontraron " + str(total) + " errores en total \n->Validar en  Feature: Muro_DAguaR")
+        
+    if R8 == 'true': #LVia_DAguaR
+        arcpy.AddMessage("\n--------------------------------------------------------------")
+        arcpy.AddMessage("Validando Topologia entre Limite Via y Deposito de agua")
+        total = LVia_DAguaR(GDB_Entrada, GDB_Salida)
+        if str(total) == '0':
+            arcpy.AddMessage("Se encontraron " + str(total) + " errores en total")
+        else:
+            arcpy.AddMessage("Se encontraron " + str(total) + " errores en total \n->Validar en  Feature: LVia_DAguaR")
+
+    if R9 == 'true': #DrenajeL_CNivel
+        arcpy.AddMessage("\n--------------------------------------------------------------")
+        arcpy.AddMessage('Validando Topologia entre Drenaje y Curva de Nivel')
+        total = DrenajL_CNivel(GDB_Entrada, GDB_Salida)
+        if str(total) == '0':
+            arcpy.AddMessage("Se encontraron " + str(total) + " errores en total")
+        else:
+            arcpy.AddMessage("Se encontraron " + str(total) + " errores en total \n->Validar en  Feature: DrenajeL_CNivel")
+
+    if R10 == 'true': #Via_Const_R
+        arcpy.AddMessage("\n--------------------------------------------------------------")
+        arcpy.AddMessage('Validando Topologia entre Vía y Construccion _R')
+        total = via_constr_r(GDB_Entrada,GDB_Salida)
+        if str(total) == '0':
+            arcpy.AddMessage("Se encontraron " + str(total) + " errores en total")
+        else:
+            arcpy.AddMessage("Se encontraron " + str(total) + " errores en total \n->Validar en  Feature: Via_Construccion_R")
+
+    if T1 == 'true': #Curva_nivel-Piscina
+        arcpy.AddMessage("--------------------------------------------------------------")
+        arcpy.AddMessage("Validando Topologia entre Curva de nivel y Piscina")
+        total = Cnivel_Piscin(GDB_Entrada, GDB_Salida)
+        if str(total) == '0':
+            arcpy.AddMessage("Se encontraron " + str(total) + " errores en total")
+        else:
+            arcpy.AddMessage("Se encontraron " + str(total) + " errores en total \n->Validar en  Feature: Cnivel_Piscin")
+
+    # if T2 == 'true': #Cerca_Construccion
+    #     arcpy.AddMessage("--------------------------------------------------------------")
+    #     arcpy.AddMessage("Validando Topologia entre Cercas y Construccion")
+    #     total = Cerca_Constr_R(GDB_Entrada, GDB_Salida)
+    #     if str(total) == '0':
+    #         arcpy.AddMessage("Se encontraron " + str(total) + " errores en total")
+    #     else:
+    #         arcpy.AddMessage("Se encontraron " + str(total) + " errores en total \n->Validar en  Feature: Cerca_ConstrR")
+
+    if T3 == 'true': #Bosque-Deposito
+        arcpy.AddMessage("--------------------------------------------------------------")
+        arcpy.AddMessage("Validando Topologia entre Bosque y Deposito")
+        total = Bosque_DAgua_R(GDB_Entrada, GDB_Salida)
+        if str(total) == '0':
+            arcpy.AddMessage("Se encontraron " + str(total) + " errores en total")
+        else:
+            arcpy.AddMessage("Se encontraron " + str(total) + " errores en total \n->Validar en  Feature: Bosque_DAgua_R")
+    
+    # if T4 == 'true': #Cerca_DaguaR
+    #     arcpy.AddMessage("--------------------------------------------------------------")
+    #     arcpy.AddMessage("Validando Topologia entre Cerca y Deposito")
+    #     total = Cerca_DAguaR(GDB_Entrada, GDB_Salida)
+    #     if str(total) == '0':
+    #         arcpy.AddMessage("Se encontraron " + str(total) + " errores en total")
+    #     else:
+    #         arcpy.AddMessage("Se encontraron " + str(total) + " errores en total \n->Validar en  Feature: Cerca_DAgua_R")
+
+    # if T5 == 'true': #Muro_DaguaR
+    #     arcpy.AddMessage("--------------------------------------------------------------")
+    #     arcpy.AddMessage("Validando Topologia entre Muro y Deposito")
+    #     total = Muro_DAguaR(GDB_Entrada, GDB_Salida)
+    #     if str(total) == '0':
+    #         arcpy.AddMessage("Se encontraron " + str(total) + " errores en total")
+    #     else:
+    #         arcpy.AddMessage("Se encontraron " + str(total) + " errores en total \n->Validar en  Feature: Muro_DAgua_R")
+
+    if T6 == 'true': #Limite_via-Muro
+        arcpy.AddMessage("--------------------------------------------------------------")
+        arcpy.AddMessage("Validando Topologia entre LVia y Muro")
+        total = LVia_Muro(GDB_Entrada, GDB_Salida)
+        if str(total) == '0':
+            arcpy.AddMessage("Se encontraron " + str(total) + " errores en total")
+        else:
+            arcpy.AddMessage("Se encontraron " + str(total) + " errores en total \n->Validar en  Feature: LVia_Muro")
+
+    if T7 == 'true': #Limite_via-Zonas_duras
+        arcpy.AddMessage("--------------------------------------------------------------")
+        arcpy.AddMessage("Validando Topologia entre LVia y ZDuras")
+        total = LVia_ZDura(GDB_Entrada, GDB_Salida)
+        if str(total) == '0':
+            arcpy.AddMessage("Se encontraron " + str(total) + " errores en total")
+        else:
+            arcpy.AddMessage("Se encontraron " + str(total) + " errores en total \n->Validar en  Feature: LVia_ZDura")
+
+    if V1 == 'true': #LVia_DaguaR
+        arcpy.AddMessage("--------------------------------------------------------------")
+        arcpy.AddMessage("Validando Topologia entre Limite Via y Deposito")
+        validacion = LVia_DAguaR(GDB_Entrada, GDB_Salida)
+        if str(validacion) == '0':
+            arcpy.AddMessage("Se encontraron " + str(validacion) + " errores en total")
+        else:
+            arcpy.AddMessage("Se encontraron " + str(validacion) + " errores en total \n->Validar en  Feature: LVia_DAguaR") 
+
+    if V2 == 'true': #LVia_Cercas
+        arcpy.AddMessage("--------------------------------------------------------------")
+        arcpy.AddMessage("Validando Topologia entre Limite Via y Cerca")
+        validacion = LVia_Cerca(GDB_Entrada, GDB_Salida)
+        if str(validacion) == '0':
+            arcpy.AddMessage("Se encontraron " + str(validacion) + " errores en total")
+        else:
+            arcpy.AddMessage("Se encontraron " + str(validacion) + " errores en total \n->Validar en  Feature: Via_Cerca")
+
+    if V3 == 'true': #ConstruccionR_ConstruccionP
+        arcpy.AddMessage("--------------------------------------------------------------")
+        arcpy.AddMessage("Validando Topologia entre ConstruccionR y ConstruccionP")
+        validacion = ConstruccionR_ConstruccionP(GDB_Entrada, GDB_Salida)
+        if str(validacion) == '0':
+            arcpy.AddMessage("Se encontraron " + str(validacion) + " errores en total")
+        else:
+            arcpy.AddMessage("Se encontraron " + str(validacion) + " errores en total \n->Validar en  Feature: ConstruccionR_ConstruccionP")
+
+    if V4 == 'true': #Via_Deposito
+        arcpy.AddMessage("--------------------------------------------------------------")
+        arcpy.AddMessage("Validando Topologia entre Via y Deposito de agua")
+        validacion = Via_DAguaR(GDB_Entrada, GDB_Salida)
+        if str(validacion) == '0':
+            arcpy.AddMessage("Se encontraron " + str(validacion) + " errores en total")
+        else:
+            arcpy.AddMessage("Se encontraron " + str(validacion) + " errores en total \n->Validar en  Feature: Via_Deposito")
+
+    if V5 == 'true': #Deposito_DrenajeL
+        arcpy.AddMessage("--------------------------------------------------------------")
+        arcpy.AddMessage("Validando Topologia entre Deposito de agua Y Drenajes L")
+        validacion = Deposito_DrenajeL(GDB_Entrada, GDB_Salida)
+        if str(validacion) == '0':
+            arcpy.AddMessage("Se encontraron " + str(validacion) + " errores en total")
+        else:
+            arcpy.AddMessage("Se encontraron " + str(validacion) + " errores en total \n->Validar en  Feature: Deposito_DrenajeL")
+
+    if V6 == 'true': #Deposito_DrenajeR
+        arcpy.AddMessage("--------------------------------------------------------------")
+        arcpy.AddMessage("Validando Topologia entre Deposito de agua Y Drenajes R")
+        validacion = Deposito_DrenajeR(GDB_Entrada, GDB_Salida)
+        if str(validacion) == '0':
+            arcpy.AddMessage("Se encontraron " + str(validacion) + " errores en total")
+        else:
+            arcpy.AddMessage("Se encontraron " + str(validacion) + " errores en total \n->Validar en  Feature: Deposito_DrenajeR")
+
+    if V7 == 'true': #JagueyP_JagueyR
+        arcpy.AddMessage("--------------------------------------------------------------")
+        arcpy.AddMessage("Validando Topologia entre Jagueys P y Jagueys R")
+        validacion = JagueyP_JagueyR(GDB_Entrada, GDB_Salida)
+        if str(validacion) == '0':
+            arcpy.AddMessage("Se encontraron " + str(validacion) + " errores en total")
+        else:
+            arcpy.AddMessage("Se encontraron " + str(validacion) + " errores en total \n->Validar en  Feature: JagueyP_JagueyR")
+
+    if V8 == 'true': #Deposito_Deposito
+        arcpy.AddMessage("--------------------------------------------------------------")
+        arcpy.AddMessage("Validando Topologia entre Depositos (No se pueden intersecar así sean del mismo tipo)")
+        validacion = Deposito_Deposito(GDB_Entrada, GDB_Salida)
+        if str(validacion) == '0':
+            arcpy.AddMessage("Se encontraron " + str(validacion) + " errores en total")
+        else:
+            arcpy.AddMessage("Se encontraron " + str(validacion) + " errores en total \n->Validar en  Feature: Deposito_Deposito")
+
+    # if V9 == 'true': #Muro_ConstrR
+    #     arcpy.AddMessage("--------------------------------------------------------------")
+    #     arcpy.AddMessage("Validando Topologia entre Muro y Construccion R")
+    #     validacion = muro_constrR(GDB_Entrada, GDB_Salida)
+    #     if str(validacion) == '0':
+    #         arcpy.AddMessage("Se encontraron " + str(validacion) + " errores en total")
+    #     else:
+    #         arcpy.AddMessage("Se encontraron " + str(validacion) + " errores en total \n->Validar en  Feature: Muro_ConstrR")
+
+    if V10 == 'true': #ConstrR_TSPubl
+        arcpy.AddMessage("--------------------------------------------------------------")
+        arcpy.AddMessage("Validando Topologia entre Construccion R y Tapa de servicio Publico")
+        validacion = constrR_TP(GDB_Entrada, GDB_Salida)
+        if str(validacion) == '0':
+            arcpy.AddMessage("Se encontraron " + str(validacion) + " errores en total")
+        else:
+            arcpy.AddMessage("Se encontraron " + str(validacion) + " errores en total \n->Validar en  Feature: TS_Publ_ConstrR")
+
+    if V11 == 'true': #ConstrR_ PDistr
+        arcpy.AddMessage("--------------------------------------------------------------")
+        arcpy.AddMessage("Validando Topologia entre Construccion R y punto de distribucion")
+        validacion = constrR_PD(GDB_Entrada, GDB_Salida)
+        if str(validacion) == '0':
+            arcpy.AddMessage("Se encontraron " + str(validacion) + " errores en total")
+        else:
+            arcpy.AddMessage("Se encontraron " + str(validacion) + " errores en total \n->Validar en  Feature: TS_Publ_ConstrR")
+
+    if V12 == 'true': #Via - Zona dura
+        arcpy.AddMessage("--------------------------------------------------------------")
+        arcpy.AddMessage("Validando Topologia entre Vía y Zona Dura")
+        validacion = via_zdura(GDB_Entrada, GDB_Salida)
+        if str(validacion) == '0':
+            arcpy.AddMessage("Se encontraron " + str(validacion) + " errores en total")
+        else:
+            arcpy.AddMessage("Se encontraron " + str(validacion) + " errores en total \n->Validar en  Feature: TS_Publ_ConstrR")
+
+    # if V13 == 'true': #Bosque - Bosque
+    #     arcpy.AddMessage("--------------------------------------------------------------")
+    #     arcpy.AddMessage("Validando Topologia entre Bosque y Bosque")
+    #     validacion = Bosque_Bosque(GDB_Entrada, GDB_Salida)
+    #     if str(validacion) == '0':
+    #         arcpy.AddMessage("Se encontraron " + str(validacion) + " errores en total")
+    #     else:
+    #         arcpy.AddMessage("Se encontraron " + str(validacion) + " errores en total \n->Validar en  Feature: Bosque_Bosque")
+
+    if V14 == 'true': #Bosque - Drenaj_R
+        arcpy.AddMessage("--------------------------------------------------------------")
+        arcpy.AddMessage("Validando Topologia entre Bosque y Drenaj_R")
+        validacion = Bosque_Drenaje_R(GDB_Entrada, GDB_Salida)
+        if str(validacion) == '0':
+            arcpy.AddMessage("Se encontraron " + str(validacion) + " errores en total")
+        else:
+            arcpy.AddMessage("Se encontraron " + str(validacion) + " errores en total \n->Validar en  Feature: Bosque_Drenaj_R")
+
+    # if V15 == 'true': #Cerca - Drenaje_L
+    #     arcpy.AddMessage("--------------------------------------------------------------")
+    #     arcpy.AddMessage("Validando Topologia entre Cerca y Drenaj_L")
+    #     validacion = Cerca_DrenajeL(GDB_Entrada, GDB_Salida)
+    #     if str(validacion) == '0':
+    #         arcpy.AddMessage("Se encontraron " + str(validacion) + " errores en total")
+    #     else:
+    #         arcpy.AddMessage("Se encontraron " + str(validacion) + " errores en total \n->Validar en  Feature: Cerca_Drenaje_l")
+
+    if V16 == 'true': #Cicloruta - Lvia
+        arcpy.AddMessage("--------------------------------------------------------------")
+        arcpy.AddMessage("Validando Topologia entre Cicloruta y Lvia")
+        validacion = Cicloruta_Lvia(GDB_Entrada, GDB_Salida)
+        if str(validacion) == '0':
+            arcpy.AddMessage("Se encontraron " + str(validacion) + " errores en total")
+        else:
+            arcpy.AddMessage("Se encontraron " + str(validacion) + " errores en total \n->Validar en  Feature: Cicloruta_Lvia")
+
+    # if V17 == 'true': #Constr_P - Constr_P
+    #     arcpy.AddMessage("--------------------------------------------------------------")
+    #     arcpy.AddMessage("Validando Topologia entre Constr_P y Constr_P")
+    #     validacion = ConstruccionP_ConstruccionP(GDB_Entrada, GDB_Salida)
+    #     if str(validacion) == '0':
+    #         arcpy.AddMessage("Se encontraron " + str(validacion) + " errores en total")
+    #     else:
+    #         arcpy.AddMessage("Se encontraron " + str(validacion) + " errores en total \n->Validar en  Feature: Constr_P")
+
+    # if V18 == 'true': #Constr_R - Constr_R
+    #     arcpy.AddMessage("--------------------------------------------------------------")
+    #     arcpy.AddMessage("Validando Topologia entre Constr_R y Constr_R")
+    #     validacion = ConstruccionR_ConstruccionR(GDB_Entrada, GDB_Salida)
+    #     if str(validacion) == '0':
+    #         arcpy.AddMessage("Se encontraron " + str(validacion) + " errores en total")
+    #     else:
+    #         arcpy.AddMessage("Se encontraron " + str(validacion) + " errores en total \n->Validar en  Feature: Constr_R")
+
+    if V19 == 'true': #DrenajeR_CNivel
+        arcpy.AddMessage("\n--------------------------------------------------------------")
+        arcpy.AddMessage('Validando Topologia entre Drenaje R y Curva de Nivel')
+        total = DrenajR_CNivel(GDB_Entrada, GDB_Salida)
+        if str(total) == '0':
+            arcpy.AddMessage("Se encontraron " + str(total) + " errores en total")
+        else:
+            arcpy.AddMessage("Se encontraron " + str(total) + " errores en total \n->Validar en  Feature: DrenajeR_CNivel")
+
+    if V20 == 'true': # Validar Nombre Geográfico - Construcción P
+        arcpy.AddMessage("--------------------------------------------------------------")
+        arcpy.AddMessage("Validando Topologia entre Nombre Geográfico - Construcción P")
+        validacion = NGeogr_Constr_P(GDB_Entrada, GDB_Salida)
+        if str(validacion) == '0':
+            arcpy.AddMessage("Se encontraron " + str(validacion) + " errores en total")
+        else:
+            arcpy.AddMessage("Se encontraron " + str(validacion) + " errores en total \n->Validar en  Feature: NGeogr_ConstruccionP")
+
+    if V21 == 'true': # Validar NombreGeo_Lvia
+        arcpy.AddMessage("--------------------------------------------------------------")
+        arcpy.AddMessage("Validando Topologia entre Nombre Geográfico - Límite Vía")
+        validacion = NombreGeo_Lvia(GDB_Entrada, GDB_Salida)
+        if str(validacion) == '0':
+            arcpy.AddMessage("Se encontraron " + str(validacion) + " errores en total")
+        else:
+            arcpy.AddMessage("Se encontraron " + str(validacion) + " errores en total \n->Validar en  Feature: NombreGeo_Lvia")
+
+    if V22 == 'true': # Validar NombreGeo_NombreGeo
+        arcpy.AddMessage("--------------------------------------------------------------")
+        arcpy.AddMessage("Validando Topologia entre Nombre Geográfico - Nombre Geográfico")
+        validacion = NombreGeo_NombreGeo(GDB_Entrada, GDB_Salida)
+        if str(validacion) == '0':
+            arcpy.AddMessage("Se encontraron " + str(validacion) + " errores en total")
+        else:
+            arcpy.AddMessage("Se encontraron " + str(validacion) + " errores en total \n->Validar en  Feature: NGeogr_NGeogr")  
+
+    if V23 == 'true': # Validar PDistr_DAguaR
+        arcpy.AddMessage("--------------------------------------------------------------")
+        arcpy.AddMessage("Validando Topologia entre Punto de Distribución - Deposito de agua")
+        validacion = PDistr_DAguaR(GDB_Entrada, GDB_Salida)
+        if str(validacion) == '0':
+            arcpy.AddMessage("Se encontraron " + str(validacion) + " errores en total")
+        else:
+            arcpy.AddMessage("Se encontraron " + str(validacion) + " errores en total \n->Validar en  Feature: PDistr_DAguaR")  
+
+    if V24 == 'true': # Validar Vias_Cerca      
+        arcpy.AddMessage("--------------------------------------------------------------")
+        arcpy.AddMessage("Validando Topologia entre Vías (Tipo Primaria, secundaria y terciaria) - Cerca")
+        validacion = Vias_Cerca(GDB_Entrada, GDB_Salida)
+        if str(validacion) == '0':
+            arcpy.AddMessage("Se encontraron " + str(validacion) + " errores en total")
+        else:
+            arcpy.AddMessage("Se encontraron " + str(validacion) + " errores en total \n->Validar en  Feature: Vias_Cerca")
+
+    if V25 == 'true': # Validar Vias_Drenaje permanente
+        arcpy.AddMessage("--------------------------------------------------------------")
+        arcpy.AddMessage("Validando Topologia entre Vías (Tipo Primaria, secundaria y terciaria) - Drenaje Permanente")
+        validacion = Vias_Drenaj(GDB_Entrada, GDB_Salida)
+        if str(validacion) == '0':
+            arcpy.AddMessage("Se encontraron " + str(validacion) + " errores en total")
+        else:
+            arcpy.AddMessage("Se encontraron " + str(validacion) + " errores en total \n->Validar en  Feature: Vias_Drenaj")
+
+    if V26 == 'true': # Validar DrenajeL_DrenajeR       
+        arcpy.AddMessage("--------------------------------------------------------------")
+        arcpy.AddMessage("Validando Topologia entre Drenaje_L y Drenaje_R")
+        validacion = DrenajeL_DrenajeR(GDB_Entrada, GDB_Salida)
+        if str(validacion) == '0':
+            arcpy.AddMessage("Se encontraron " + str(validacion) + " errores en total")
+        else:
+            arcpy.AddMessage("Se encontraron " + str(validacion) + " errores en total \n->Validar en  Feature: Drenaje_L")
+
+    if V27 == 'true': # Validar ConstrR_Tuberi
+        arcpy.AddMessage("--------------------------------------------------------------")
+        arcpy.AddMessage("Validando Topologia entre ConstrR y Tuberi")
+        validacion =  ConstrR_Tuberi(GDB_Entrada, GDB_Salida)
+        if str(validacion) == '0':
+            arcpy.AddMessage("Se encontraron " + str(validacion) + " errores en total")
+        else:
+            arcpy.AddMessage("Se encontraron " + str(validacion) + " errores en total \n->Validar en  Feature: ConstrR_Tuberi")
+    
+    
+    arcpy.env.workspace = Ruta_Salida
+    featureClass = arcpy.ListFeatureClasses()
+    for fc in featureClass:
+        conteo = arcpy.management.GetCount(fc)
+        if int(str(conteo)) == 0:
+            arcpy.AddMessage("Borrando el Feature Class: {0}".format(fc))
+            arcpy.management.Delete(fc)
+        else:
+            pass 
+            
+    arcpy.AddMessage("\n--------------------------------------------------------------")
+    arcpy.AddMessage("FINALIZADO")
+    
